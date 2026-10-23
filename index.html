@@ -32,8 +32,22 @@ td,th{padding:3px 6px;border-bottom:1px solid var(--line);text-align:left;vertic
 footer{padding:8px 16px 24px;color:var(--sub);font-size:12px}
 a{color:inherit}
 section.wide{grid-column:1/-1}
-.cols{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
-#map{height:360px;border-radius:6px;border:1px solid var(--line);background:var(--bg)}
+.cols{display:grid;gap:12px;grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr);align-items:start}
+@media (max-width:760px){.cols{grid-template-columns:minmax(0,1fr)}}
+h3{font-size:14px;margin:14px 0 6px;display:flex;justify-content:space-between;gap:8px}
+h3 small{font-weight:400;color:var(--sub)}
+.radarbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px;font-size:13px}
+.radarbar input[type=range]{flex:1;min-width:120px}
+#rtime{min-width:7em}
+#banner button{margin-left:12px}
+body.eq main>section{display:none}
+body.eq main>#quake,body.eq main>#hako,body.eq main>#tsu{display:block}
+body.eq main>#tsu{order:-2;grid-column:1/-1}
+body.eq main>#quake{order:-3;grid-column:1/-1;border:3px solid var(--bad)}
+body.eq main>#quake .big{font-size:44px}
+body.eq main>#hako{order:-1;grid-column:1/-1}
+body.eq #fc,body.eq .radarbar{display:none}
+#map{height:420px;border-radius:6px;border:1px solid var(--line);background:var(--bg)}
 .pin{display:flex;align-items:center;justify-content:center;border-radius:50%;border:2px solid #fff;color:#fff;font-weight:700;font-size:13px;box-shadow:0 0 3px rgba(0,0,0,.6);background:#78909c}
 .pin.s2{background:#1976d2}.pin.s3{background:#2e7d32}.pin.s4{background:#f9a825;color:#000}.pin.s5{background:#e65100}.pin.s6{background:#b71c1c}
 .leaflet-container{font:inherit}
@@ -49,13 +63,18 @@ section.wide{grid-column:1/-1}
 </header>
 <div id="banner"></div>
 <main>
-  <section id="hako" class="wide"><h2>函館市内の震度観測点<small id="h-t"></small></h2>
-    <div class="cols"><div id="map"></div><div id="h-b">読み込み中…</div></div>
-    <div class="sub" style="margin-top:6px">観測点の位置は、気象庁の観測点一覧(美原、尾札部町)と、町名の代表点(＊の自治体設置の点)です。町名の代表点は実際の設置場所とずれます。地図は国土地理院の地図を使っています。</div></section>
+  <section id="hako" class="wide"><h2>函館市内の震度観測点と現在の天気<small id="h-t"></small></h2>
+    <div class="cols">
+      <div><div id="map"></div>
+        <div class="radarbar"><label><input type="checkbox" id="rchk" checked> 雨雲レーダー</label>
+          <button id="rplay" type="button">再生</button><input type="range" id="rrange" min="0" max="0" value="0"><span id="rtime"></span></div>
+        <div class="sub" style="margin-top:6px">雨雲は気象庁の高解像度降水ナウキャスト(青から赤になるほど強い雨)です。観測点の位置は、気象庁の観測点一覧(美原、尾札部町)と、町名の代表点(＊の自治体設置の点)です。町名の代表点は実際の設置場所とずれます。地図は国土地理院の地図です。</div></div>
+      <div><div id="h-b">読み込み中…</div>
+        <div id="fc"><h3>市内各地の現在の天気<small id="f-t"></small></h3><div id="f-b">読み込み中…</div></div></div>
+    </div></section>
   <section id="quake"><h2>最新の地震情報<small id="q-t"></small></h2><div id="q-b">読み込み中…</div></section>
   <section id="tsu"><h2>津波情報<small id="t-t"></small></h2><div id="t-b">読み込み中…</div></section>
   <section id="wrn"><h2>気象警報・注意報<small id="w-t"></small></h2><div id="w-b">読み込み中…</div></section>
-  <section id="fc"><h2>市内各地の現在の天気<small id="f-t"></small></h2><div id="f-b">読み込み中…</div></section>
   <section id="net"><h2>通信状態</h2><div id="n-b"></div></section>
 </main>
 <footer>
@@ -84,6 +103,7 @@ const CFG = {
   ],
   // 函館市の沿岸は津軽海峡側と噴火湾・太平洋側にまたがる
   tsunamiAreas: ["津軽海峡沿岸","北海道太平洋沿岸西部"],
+  eqMode: {minutes: 30, hakodateMin: 10, anyMin: 45}, // 函館市で震度1以上、または全国で震度5弱以上の地震から30分間は地震モード
   quakeRefreshMs: 15000, slowRefreshMs: 120000
 };
 const $ = id => document.getElementById(id);
@@ -113,7 +133,7 @@ async function getJson(url){
 }
 function setStatus(k, ok, msg){ status[k] = {ok, msg, at:new Date()}; renderNet(); }
 function renderNet(){
-  const names = {quake:"P2P地震情報",tsunami:"気象庁 津波",warn:"気象庁 警報",fc:"気象庁 アメダス"};
+  const names = {quake:"P2P地震情報",tsunami:"気象庁 津波",warn:"気象庁 警報",fc:"気象庁 アメダス",radar:"気象庁 雨雲レーダー"};
   $("n-b").innerHTML = "<table>"+Object.keys(names).map(k=>{
     const s = status[k];
     const cell = !s ? "未取得" : s.ok ? `<span class="ok">正常</span> <span class="sub">${pad(s.at.getHours())}:${pad(s.at.getMinutes())}:${pad(s.at.getSeconds())}</span>` : `<span class="err">失敗 ${esc(s.msg)}</span>`;
@@ -138,12 +158,36 @@ function banner(text, test){
   const b = $("banner");
   if(!text){ b.style.display="none"; return; }
   b.textContent = text; b.className = test?"test":""; b.style.display="block";
+  if(eqOn){
+    const btn = document.createElement("button");
+    btn.textContent = "通常の表示に戻す";
+    btn.onclick = ()=>{ eqDismissed = lastQuakeId; setEqMode(false); if(testMode) banner("試験モード: 表示は架空の情報です。実際の発表ではありません。", true); else banner(""); };
+    b.appendChild(btn);
+  }
+}
+// ---- 地震モード ----
+let eqOn = false, eqDismissed = null;
+function setEqMode(on){
+  eqOn = on; document.body.classList.toggle("eq", on);
+  if(on) removeRadar(); else if($("rchk").checked) showRadar();
+  if(map) setTimeout(()=>map.invalidateSize(), 50);
+}
+const parseJst = t => new Date(String(t).slice(0,19).replace(/\//g,"-").replace(" ","T")+"+09:00");
+function evalEqMode(q, myMax){
+  const m = CFG.eqMode, age = (Date.now()-parseJst(q.earthquake.time).getTime())/60000;
+  const hit = testMode || (age >= -2 && age <= m.minutes && (myMax >= m.hakodateMin || q.earthquake.maxScale >= m.anyMin));
+  const want = hit && eqDismissed !== q.id;
+  if(want !== eqOn){
+    setEqMode(want);
+    if(want) banner(`${testMode?"【試験】":""}地震モード: ${CFG.city}${myMax?"で震度"+SCALE[myMax]:"の震度発表なし"} / 最大震度${SCALE[q.earthquake.maxScale]||"?"} ${q.earthquake.hypocenter.name||""}`, testMode);
+    else if(!testMode) banner("");
+  }
 }
 
 // ---- 地震 ----
 const DUMMY = () => {
   const now = jst(new Date()), t = `${now.getFullYear()}/${pad(now.getMonth()+1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-  return {id:"test-"+Date.now(), code:551, earthquake:{time:t, hypocenter:{name:"【試験】津軽海峡", magnitude:6.8, depth:10}, maxScale:50, domesticTsunami:"Watch"},
+  return {id:"test-dummy", code:551, earthquake:{time:t, hypocenter:{name:"【試験】津軽海峡", magnitude:6.8, depth:10}, maxScale:50, domesticTsunami:"Watch"},
     points:[{pref:"北海道",addr:"函館市美原",scale:50},{pref:"北海道",addr:"函館市大森町",scale:45},{pref:"北海道",addr:"函館市日ノ浜町",scale:40},{pref:"北海道",addr:"函館市泊町",scale:30},{pref:"北海道",addr:"北斗市中央",scale:45},{pref:"青森県",addr:"大間町",scale:50}], issue:{time:t}};
 };
 const TSU = {None:"津波の心配なし",Unknown:"不明",Checking:"調査中",NonEffective:"若干の海面変動(被害の心配なし)",Watch:"津波注意報",Warning:"津波予報(種類不明)"};
@@ -182,7 +226,8 @@ async function refreshQuake(){
     }
     const myMax = renderQuake(q);
     setStatus("quake", true);
-    if(q.id !== lastQuakeId){
+    const isNew = q.id !== lastQuakeId;
+    if(isNew){
       const first = lastQuakeId === null;
       lastQuakeId = q.id;
       if(!first || testMode){
@@ -191,6 +236,7 @@ async function refreshQuake(){
           banner(`${testMode?"【試験】":""}地震情報: ${CFG.city}${myMax?"で震度"+SCALE[myMax]:"の震度発表なし"} / 最大震度${SCALE[q.earthquake.maxScale]||"?"} ${q.earthquake.hypocenter.name||""}`, testMode);
       }
     }
+    evalEqMode(q, myMax);
   }catch(e){ setStatus("quake", false, e.message); $("q-b").innerHTML = `<div class="err">取得できません(${esc(e.message)})</div>`; }
 }
 
@@ -212,6 +258,43 @@ function drawMap(val){
     else pins[n] = L.marker([lat,lon], {icon, title:n}).bindTooltip(tip, {direction:"top"}).addTo(map);
   }
 }
+
+// ---- 雨雲レーダー ----
+const radar = {frames:[], layer:null, idx:0, timer:null};
+const JT = "https://www.jma.go.jp/bosai/jmatile/data/nowc/";
+const hm = t => t.slice(8,10)+":"+t.slice(10,12);
+function radarUrl(f){ return `${JT}${f.basetime}/none/${f.validtime}/surf/hrpns/{z}/{x}/{y}.png`; }
+function showFrame(i){
+  const f = radar.frames[i]; if(!f) return;
+  radar.idx = i; $("rrange").value = i;
+  $("rtime").textContent = hm(f.validtime)+(f.fc?" 予測":" 実況");
+  if(!map || eqOn || !$("rchk").checked) return;
+  if(radar.layer) radar.layer.setUrl(radarUrl(f));
+  else radar.layer = L.tileLayer(radarUrl(f), {opacity:0.7, maxNativeZoom:10, maxZoom:17, attribution:'<a href="https://www.jma.go.jp/bosai/nowc/" target="_blank" rel="noopener">気象庁</a>'}).addTo(map);
+}
+function removeRadar(){ if(radar.layer){ map.removeLayer(radar.layer); radar.layer = null; } stopRadar(); }
+function showRadar(){ showFrame(radar.idx); }
+function stopRadar(){ if(radar.timer){ clearInterval(radar.timer); radar.timer = null; } $("rplay").textContent = "再生"; }
+async function loadRadar(){
+  try{
+    const [n1, n2] = await Promise.all([getJson(JT+"targetTimes_N1.json"), getJson(JT+"targetTimes_N2.json")]);
+    const past = n1.slice(0,7).reverse().map(f=>({...f, fc:false}));
+    const last = past[past.length-1].validtime;
+    const fut = n2.filter(f=>f.validtime > last).sort((a,b)=>a.validtime < b.validtime ? -1 : 1).slice(0,12).map(f=>({...f, fc:true}));
+    const wasPlaying = !!radar.timer;
+    radar.frames = past.concat(fut);
+    $("rrange").max = radar.frames.length-1;
+    if(!wasPlaying) showFrame(past.length-1);
+    setStatus("radar", true);
+  }catch(e){ setStatus("radar", false, e.message); $("rtime").textContent = "雨雲レーダーを取得できません"; }
+}
+$("rchk").onchange = ()=>{ if($("rchk").checked) showRadar(); else removeRadar(); };
+$("rrange").oninput = ()=>{ stopRadar(); showFrame(+$("rrange").value); };
+$("rplay").onclick = ()=>{
+  if(radar.timer){ stopRadar(); return; }
+  $("rplay").textContent = "停止";
+  radar.timer = setInterval(()=>showFrame((radar.idx+1) % radar.frames.length), 700);
+};
 
 // ---- 津波 ----
 const TSUKIND = {"津波予報（若干の海面変動）":"若干の海面変動"};
@@ -289,15 +372,16 @@ setInterval(()=>{ const n=jst(new Date()); $("clock").textContent = `${n.getFull
 $("snd").onclick = ()=>{ sound=!sound; $("snd").textContent="通知音: "+(sound?"オン":"オフ"); $("snd").classList.toggle("on",sound); if(sound) beep(); };
 $("tst").onclick = ()=>{
   testMode = !testMode; $("tst").classList.toggle("on",testMode);
-  if(!testMode){ banner(""); lastQuakeId=null; }
+  if(!testMode){ banner(""); lastQuakeId=null; eqDismissed=null; setEqMode(false); }
   else banner("試験モード: 表示は架空の情報です。実際の発表ではありません。", true);
   refreshAll();
 };
-function refreshAll(){ refreshQuake(); refreshTsunami(); refreshWarn(); refreshForecast(); }
+function refreshAll(){ drawMap({}); loadRadar(); refreshQuake(); refreshTsunami(); refreshWarn(); refreshForecast(); }
 refreshAll(); renderNet();
 setInterval(refreshQuake, CFG.quakeRefreshMs);
 setInterval(refreshTsunami, CFG.quakeRefreshMs*2);
 setInterval(refreshWarn, CFG.slowRefreshMs);
+setInterval(loadRadar, 300000);
 setInterval(refreshForecast, CFG.slowRefreshMs);
 window.addEventListener("online", renderNet); window.addEventListener("offline", renderNet);
 </script>
