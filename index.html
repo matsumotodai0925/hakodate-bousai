@@ -17,7 +17,7 @@ button{font:inherit;padding:4px 12px;border:1px solid var(--line);border-radius:
 button.on{background:var(--fg);color:var(--bg)}
 #banner{display:none;padding:10px 16px;font-weight:700;color:#fff;background:var(--bad)}
 #banner.test{background:var(--test)}
-main{display:grid;gap:12px;padding:12px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+main{display:grid;gap:12px;padding:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
 section{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
 section h2{font-size:15px;margin:0 0 8px;display:flex;justify-content:space-between;gap:8px}
 section h2 small{font-weight:400;color:var(--sub)}
@@ -52,11 +52,11 @@ section.wide{grid-column:1/-1}
   <section id="hako" class="wide"><h2>函館市内の震度観測点<small id="h-t"></small></h2>
     <div class="cols"><div id="map"></div><div id="h-b">読み込み中…</div></div>
     <div class="sub" style="margin-top:6px">観測点の位置は、気象庁の観測点一覧(美原、尾札部町)と、町名の代表点(＊の自治体設置の点)です。町名の代表点は実際の設置場所とずれます。地図は国土地理院の地図を使っています。</div></section>
+  <section id="quake"><h2>最新の地震情報<small id="q-t"></small></h2><div id="q-b">読み込み中…</div></section>
   <section id="tsu"><h2>津波情報<small id="t-t"></small></h2><div id="t-b">読み込み中…</div></section>
   <section id="wrn"><h2>気象警報・注意報<small id="w-t"></small></h2><div id="w-b">読み込み中…</div></section>
-  <section id="fc"><h2>函館の天気予報<small id="f-t"></small></h2><div id="f-b">読み込み中…</div></section>
+  <section id="fc"><h2>市内各地の現在の天気<small id="f-t"></small></h2><div id="f-b">読み込み中…</div></section>
   <section id="net"><h2>通信状態</h2><div id="n-b"></div></section>
-  <section id="quake" class="wide"><h2>最新の地震情報<small id="q-t"></small></h2><div id="q-b">読み込み中…</div></section>
 </main>
 <footer>
   データ源: 気象庁防災情報XML(JSON)、P2P地震情報。<br>
@@ -70,8 +70,8 @@ const CFG = {
   city: "函館市",
   cityCode: "0120200",          // 気象庁の市町村コード
   office: "017000",             // 函館地方気象台(渡島・檜山地方)
-  forecastAreas: [["017010","函館(渡島地方)"]],
-  tempStation: ["23232","函館"],
+  // 函館市内のアメダス(気象庁)
+  amedas: [["23232","函館"],["23206","川汲"],["23291","戸井泊"]],
   // 函館市内の震度観測点(気象庁の観測点名から「＊」「(旧)」を除いたもの)と位置
   stations: [
     ["函館市美原", 41.8167, 140.7533],
@@ -96,8 +96,7 @@ const WARN = {"02":"暴風雪警報","03":"大雨警報","04":"洪水警報","05
   "20":"濃霧注意報","21":"乾燥注意報","22":"なだれ注意報","23":"低温注意報","24":"霜注意報","25":"着氷注意報","26":"着雪注意報",
   "32":"暴風雪特別警報","33":"大雨特別警報","35":"暴風特別警報","36":"大雪特別警報","37":"波浪特別警報","38":"高潮特別警報"};
 const SEVERE = c => +c>=2 && +c<=8 || +c>=32;
-const WX = {"1":"晴れ","2":"くもり","3":"雨","4":"雪"};
-const wxIcon = c => `https://www.jma.go.jp/bosai/forecast/img/${c}.svg`;
+const WDIR = ["","北北東","北東","東北東","東","東南東","南東","南南東","南","南南西","南西","西南西","西","西北西","北西","北北西","北"];
 const pad = n => String(n).padStart(2,"0");
 const jst = d => new Date(d.getTime() + (d.getTimezoneOffset()+540)*60000);
 const fmtTime = s => s ? String(s).replace(/^\d{4}\//,"").replace(/:\d\d(\.\d+)?$/,"") : "";
@@ -114,7 +113,7 @@ async function getJson(url){
 }
 function setStatus(k, ok, msg){ status[k] = {ok, msg, at:new Date()}; renderNet(); }
 function renderNet(){
-  const names = {quake:"P2P地震情報",tsunami:"気象庁 津波",warn:"気象庁 警報",fc:"気象庁 予報"};
+  const names = {quake:"P2P地震情報",tsunami:"気象庁 津波",warn:"気象庁 警報",fc:"気象庁 アメダス"};
   $("n-b").innerHTML = "<table>"+Object.keys(names).map(k=>{
     const s = status[k];
     const cell = !s ? "未取得" : s.ok ? `<span class="ok">正常</span> <span class="sub">${pad(s.at.getHours())}:${pad(s.at.getMinutes())}:${pad(s.at.getSeconds())}</span>` : `<span class="err">失敗 ${esc(s.msg)}</span>`;
@@ -261,24 +260,26 @@ async function refreshWarn(){
   }catch(e){ setStatus("warn", false, e.message); $("w-b").innerHTML = `<div class="err">取得できません(${esc(e.message)})</div>`; }
 }
 
-// ---- 天気 ----
+// ---- 現在の天気(アメダス) ----
 async function refreshForecast(){
   try{
-    const d = await getJson(`https://www.jma.go.jp/bosai/forecast/data/forecast/${CFG.office}.json`);
-    const ts = d[0].timeSeries, days = ts[0].timeDefines.map(t=>jst(new Date(t)));
-    const pops = ts[1];
-    const temps = ts[2].areas.find(a=>a.area.code===CFG.tempStation[0]);
-    const cols = CFG.forecastAreas.map(([code,name])=>{
-      const w = ts[0].areas.find(a=>a.area.code===code);
-      const p = pops.areas.find(a=>a.area.code===code);
-      return `<div style="flex:1;min-width:140px"><b>${name}</b>`+days.map((dt,i)=>
-        `<div style="display:flex;gap:8px;align-items:center;border-top:1px solid var(--line);padding:4px 0">
-          <img src="${wxIcon(w.weatherCodes[i])}" width="40" alt="" onerror="this.style.visibility='hidden'">
-          <div><div class="sub">${dt.getMonth()+1}/${dt.getDate()}</div><div>${esc((w.weathers[i]||"").replace(/　/g," "))}</div></div></div>`).join("")+"</div>";
+    const t = (await (await fetch("https://www.jma.go.jp/bosai/amedas/data/latest_time.txt",{cache:"no-store"})).text()).trim();
+    const key = t.replace(/\D/g,"").slice(0,14);
+    const d = await getJson(`https://www.jma.go.jp/bosai/amedas/data/map/${key}.json`);
+    const v = (o,k) => o && o[k] && o[k][0] != null && o[k][1] === 0 ? o[k][0] : null;
+    const num = (x,u) => x == null ? "–" : x + u;
+    const rows = CFG.amedas.map(([code,name])=>{
+      const o = d[code] || {};
+      const wd = v(o,"windDirection"), w = v(o,"wind"), snow = v(o,"snow");
+      const wind = w == null ? "–" : (w === 0 ? "静穏" : (WDIR[wd]||"")+" "+w+"m/s");
+      const rain1 = v(o,"precipitation1h"), rain24 = v(o,"precipitation24h");
+      const raining = rain1 > 0;
+      return `<tr><td><b>${name}</b></td><td>${num(v(o,"temp"),"℃")}</td><td>${wind}</td>
+        <td class="${raining?"warn":""}">${num(rain1,"mm")}<span class="sub"> / ${num(rain24,"mm")}</span></td><td>${num(snow,"cm")}</td></tr>`;
     });
-    const tmin = temps && temps.temps ? temps.temps.filter(Boolean).join("℃ / ")+"℃" : "";
-    $("f-b").innerHTML = `<div style="display:flex;gap:12px;flex-wrap:wrap">${cols.join("")}</div><div class="sub" style="margin-top:6px">${CFG.tempStation[1]}の気温: ${tmin}</div>`;
-    $("f-t").textContent = fmtIso(d[0].reportDatetime)+"発表";
+    $("f-b").innerHTML = `<table><tr><th></th><th>気温</th><th>風</th><th>降水量<br><span class="sub">1時間 / 24時間</span></th><th>積雪</th></tr>${rows.join("")}</table>
+      <div class="sub" style="margin-top:6px">気象庁のアメダス。10分ごとに更新されます。観測していない項目は「–」です。</div>`;
+    $("f-t").textContent = fmtIso(t);
     setStatus("fc", true);
   }catch(e){ setStatus("fc", false, e.message); $("f-b").innerHTML = `<div class="err">取得できません(${esc(e.message)})</div>`; }
 }
@@ -297,7 +298,7 @@ refreshAll(); renderNet();
 setInterval(refreshQuake, CFG.quakeRefreshMs);
 setInterval(refreshTsunami, CFG.quakeRefreshMs*2);
 setInterval(refreshWarn, CFG.slowRefreshMs);
-setInterval(refreshForecast, CFG.slowRefreshMs*5);
+setInterval(refreshForecast, CFG.slowRefreshMs);
 window.addEventListener("online", renderNet); window.addEventListener("offline", renderNet);
 </script>
 </body>
