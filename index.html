@@ -59,7 +59,7 @@ section.wide{grid-column:1/-1}
   <section id="fc"><h2>函館の天気予報<small id="f-t"></small></h2><div id="f-b">読み込み中…</div></section>
   <section id="km"><h2>強震モニタ<small id="k-t"></small></h2>
     <img class="km" id="kimg" alt="強震モニタのリアルタイム震度画像">
-    <div class="sub">防災科学技術研究所の画像を約10秒おきに更新します。<a href="https://www.kmoni.bosai.go.jp/" target="_blank" rel="noopener">公式サイト</a></div></section>
+    <div class="sub" id="kmsg">防災科学技術研究所の画像を約10秒おきに更新します。<a href="https://www.kmoni.bosai.go.jp/" target="_blank" rel="noopener">公式サイト</a></div></section>
   <section id="net"><h2>通信状態</h2><div id="n-b"></div></section>
 </main>
 <footer>
@@ -288,12 +288,19 @@ async function refreshForecast(){
 
 // ---- 強震モニタ ----
 function refreshKmoni(){
+  // 強震モニタの画像は http でしか配信されない。https のページからは、混在コンテンツとして読み込めない
+  if(location.protocol === "https:"){
+    $("kimg").hidden = true;
+    $("kmsg").innerHTML = 'このページを https で開いているため、強震モニタの画像を埋め込めません。<a href="https://www.kmoni.bosai.go.jp/" target="_blank" rel="noopener">強震モニタの公式サイト</a>を別のタブで開いてください。index.html をダウンロードして開くと、画像を表示できます。';
+    setStatus("km", false, "https のページでは埋め込めません");
+    return;
+  }
   const t = jst(new Date(Date.now()-5000)); // 配信遅れ分を差し引く
   const d = `${t.getFullYear()}${pad(t.getMonth()+1)}${pad(t.getDate())}`, s = d+pad(t.getHours())+pad(t.getMinutes())+pad(t.getSeconds());
   const img = new Image();
-  img.onload = ()=>{ $("kimg").src = img.src; $("k-t").textContent = `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`; setStatus("km", true); };
+  img.onload = ()=>{ $("kimg").hidden = false; $("kimg").src = img.src; $("k-t").textContent = `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`; setStatus("km", true); };
   img.onerror = ()=> setStatus("km", false, "画像を取得できません");
-  img.src = `https://www.kmoni.bosai.go.jp/data/map_img/RealTimeImg/jma_s/${d}/${s}.jma_s.gif`;
+  img.src = `http://www.kmoni.bosai.go.jp/data/map_img/RealTimeImg/jma_s/${d}/${s}.jma_s.gif`;
 }
 
 // ---- UI ----
