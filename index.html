@@ -28,7 +28,6 @@ td,th{padding:3px 6px;border-bottom:1px solid var(--line);text-align:left;vertic
 .s{display:inline-block;min-width:2.4em;text-align:center;border-radius:4px;color:#fff;font-weight:700;padding:0 4px;background:#78909c}
 .s5{background:#e65100}.s6{background:#b71c1c}.s4{background:#f9a825;color:#000}.s3{background:#2e7d32}.s2{background:#1976d2}
 .ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
-img.km{width:100%;max-width:352px;display:block;margin:auto;image-rendering:pixelated;background:#000}
 .err{color:var(--bad);font-size:13px}
 footer{padding:8px 16px 24px;color:var(--sub);font-size:12px}
 a{color:inherit}
@@ -50,20 +49,17 @@ section.wide{grid-column:1/-1}
 </header>
 <div id="banner"></div>
 <main>
-  <section id="quake"><h2>最新の地震情報<small id="q-t"></small></h2><div id="q-b">読み込み中…</div></section>
   <section id="hako" class="wide"><h2>函館市内の震度観測点<small id="h-t"></small></h2>
     <div class="cols"><div id="map"></div><div id="h-b">読み込み中…</div></div>
     <div class="sub" style="margin-top:6px">観測点の位置は、気象庁の観測点一覧(美原、尾札部町)と、町名の代表点(＊の自治体設置の点)です。町名の代表点は実際の設置場所とずれます。地図は国土地理院の地図を使っています。</div></section>
   <section id="tsu"><h2>津波情報<small id="t-t"></small></h2><div id="t-b">読み込み中…</div></section>
   <section id="wrn"><h2>気象警報・注意報<small id="w-t"></small></h2><div id="w-b">読み込み中…</div></section>
   <section id="fc"><h2>函館の天気予報<small id="f-t"></small></h2><div id="f-b">読み込み中…</div></section>
-  <section id="km"><h2>強震モニタ<small id="k-t"></small></h2>
-    <img class="km" id="kimg" alt="強震モニタのリアルタイム震度画像">
-    <div class="sub" id="kmsg">防災科学技術研究所の画像を約10秒おきに更新します。<a href="https://www.kmoni.bosai.go.jp/" target="_blank" rel="noopener">公式サイト</a></div></section>
   <section id="net"><h2>通信状態</h2><div id="n-b"></div></section>
+  <section id="quake" class="wide"><h2>最新の地震情報<small id="q-t"></small></h2><div id="q-b">読み込み中…</div></section>
 </main>
 <footer>
-  データ源: 気象庁防災情報XML(JSON)、P2P地震情報、防災科学技術研究所 強震モニタ。<br>
+  データ源: 気象庁防災情報XML(JSON)、P2P地震情報。<br>
   確認・補助用の画面です。避難の判断は、J-ALERT、防災行政無線、気象庁の発表を優先してください。
 </footer>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -88,7 +84,7 @@ const CFG = {
   ],
   // 函館市の沿岸は津軽海峡側と噴火湾・太平洋側にまたがる
   tsunamiAreas: ["津軽海峡沿岸","北海道太平洋沿岸西部"],
-  quakeRefreshMs: 15000, slowRefreshMs: 120000, kmoniMs: 10000
+  quakeRefreshMs: 15000, slowRefreshMs: 120000
 };
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -118,7 +114,7 @@ async function getJson(url){
 }
 function setStatus(k, ok, msg){ status[k] = {ok, msg, at:new Date()}; renderNet(); }
 function renderNet(){
-  const names = {quake:"P2P地震情報",tsunami:"気象庁 津波",warn:"気象庁 警報",fc:"気象庁 予報",km:"強震モニタ"};
+  const names = {quake:"P2P地震情報",tsunami:"気象庁 津波",warn:"気象庁 警報",fc:"気象庁 予報"};
   $("n-b").innerHTML = "<table>"+Object.keys(names).map(k=>{
     const s = status[k];
     const cell = !s ? "未取得" : s.ok ? `<span class="ok">正常</span> <span class="sub">${pad(s.at.getHours())}:${pad(s.at.getMinutes())}:${pad(s.at.getSeconds())}</span>` : `<span class="err">失敗 ${esc(s.msg)}</span>`;
@@ -159,7 +155,8 @@ function renderQuake(q){
   $("q-t").textContent = fmtTime(q.issue&&q.issue.time||q.time);
   $("q-b").innerHTML = `<div class="big">${scaleHtml(e.maxScale)} <span style="font-size:18px">${esc(h.name||"震源不明")}</span></div>
     <div class="sub">発生 ${fmtTime(e.time)} / ${mag} / 深さ ${dep}</div>
-    <div>${esc(TSU[e.domesticTsunami]||e.domesticTsunami||"")}</div>`;
+    <div>${esc(TSU[e.domesticTsunami]||e.domesticTsunami||"")}</div>
+    <div style="margin-top:6px"><a href="https://www.kmoni.bosai.go.jp/" target="_blank" rel="noopener">強震モニタ(防災科学技術研究所)を開く</a></div>`;
   const norm = n => String(n).replace(/[＊*]/g,"").replace(/[（(]旧[）)]/,"");
   const mine = (q.points||[]).filter(p=>(p.addr||"").startsWith(CFG.city));
   const val = {};
@@ -286,23 +283,6 @@ async function refreshForecast(){
   }catch(e){ setStatus("fc", false, e.message); $("f-b").innerHTML = `<div class="err">取得できません(${esc(e.message)})</div>`; }
 }
 
-// ---- 強震モニタ ----
-function refreshKmoni(){
-  // 強震モニタの画像は http でしか配信されない。https のページからは、混在コンテンツとして読み込めない
-  if(location.protocol === "https:"){
-    $("kimg").hidden = true;
-    $("kmsg").innerHTML = 'このページを https で開いているため、強震モニタの画像を埋め込めません。<a href="https://www.kmoni.bosai.go.jp/" target="_blank" rel="noopener">強震モニタの公式サイト</a>を別のタブで開いてください。index.html をダウンロードして開くと、画像を表示できます。';
-    setStatus("km", false, "https のページでは埋め込めません");
-    return;
-  }
-  const t = jst(new Date(Date.now()-5000)); // 配信遅れ分を差し引く
-  const d = `${t.getFullYear()}${pad(t.getMonth()+1)}${pad(t.getDate())}`, s = d+pad(t.getHours())+pad(t.getMinutes())+pad(t.getSeconds());
-  const img = new Image();
-  img.onload = ()=>{ $("kimg").hidden = false; $("kimg").src = img.src; $("k-t").textContent = `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`; setStatus("km", true); };
-  img.onerror = ()=> setStatus("km", false, "画像を取得できません");
-  img.src = `http://www.kmoni.bosai.go.jp/data/map_img/RealTimeImg/jma_s/${d}/${s}.jma_s.gif`;
-}
-
 // ---- UI ----
 setInterval(()=>{ const n=jst(new Date()); $("clock").textContent = `${n.getFullYear()}/${pad(n.getMonth()+1)}/${pad(n.getDate())} ${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`; },1000);
 $("snd").onclick = ()=>{ sound=!sound; $("snd").textContent="通知音: "+(sound?"オン":"オフ"); $("snd").classList.toggle("on",sound); if(sound) beep(); };
@@ -312,13 +292,12 @@ $("tst").onclick = ()=>{
   else banner("試験モード: 表示は架空の情報です。実際の発表ではありません。", true);
   refreshAll();
 };
-function refreshAll(){ refreshQuake(); refreshTsunami(); refreshWarn(); refreshForecast(); refreshKmoni(); }
+function refreshAll(){ refreshQuake(); refreshTsunami(); refreshWarn(); refreshForecast(); }
 refreshAll(); renderNet();
 setInterval(refreshQuake, CFG.quakeRefreshMs);
 setInterval(refreshTsunami, CFG.quakeRefreshMs*2);
 setInterval(refreshWarn, CFG.slowRefreshMs);
 setInterval(refreshForecast, CFG.slowRefreshMs*5);
-setInterval(refreshKmoni, CFG.kmoniMs);
 window.addEventListener("online", renderNet); window.addEventListener("offline", renderNet);
 </script>
 </body>
