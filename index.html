@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>函館市防災ダッシュボード</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 :root{--bg:#f4f6f8;--card:#fff;--fg:#1c2733;--sub:#5b6b7a;--line:#d5dce3;--ok:#2e7d32;--warn:#e69500;--bad:#c62828;--test:#6a1b9a}
 @media (prefers-color-scheme:dark){:root{--bg:#10161c;--card:#1a232c;--fg:#e6edf3;--sub:#93a4b3;--line:#2c3945;--ok:#66bb6a;--warn:#ffb74d;--bad:#ef5350;--test:#ce93d8}}
@@ -31,6 +32,12 @@ img.km{width:100%;max-width:352px;display:block;margin:auto;image-rendering:pixe
 .err{color:var(--bad);font-size:13px}
 footer{padding:8px 16px 24px;color:var(--sub);font-size:12px}
 a{color:inherit}
+section.wide{grid-column:1/-1}
+.cols{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+#map{height:360px;border-radius:6px;border:1px solid var(--line);background:var(--bg)}
+.pin{display:flex;align-items:center;justify-content:center;border-radius:50%;border:2px solid #fff;color:#fff;font-weight:700;font-size:13px;box-shadow:0 0 3px rgba(0,0,0,.6);background:#78909c}
+.pin.s2{background:#1976d2}.pin.s3{background:#2e7d32}.pin.s4{background:#f9a825;color:#000}.pin.s5{background:#e65100}.pin.s6{background:#b71c1c}
+.leaflet-container{font:inherit}
 </style>
 </head>
 <body>
@@ -44,10 +51,12 @@ a{color:inherit}
 <div id="banner"></div>
 <main>
   <section id="quake"><h2>最新の地震情報<small id="q-t"></small></h2><div id="q-b">読み込み中…</div></section>
-  <section id="hako"><h2>函館市の震度<small id="h-t"></small></h2><div id="h-b">読み込み中…</div></section>
+  <section id="hako" class="wide"><h2>函館市内の震度観測点<small id="h-t"></small></h2>
+    <div class="cols"><div id="map"></div><div id="h-b">読み込み中…</div></div>
+    <div class="sub" style="margin-top:6px">観測点の位置は、気象庁の観測点一覧(美原、尾札部町)と、町名の代表点(＊の自治体設置の点)です。町名の代表点は実際の設置場所とずれます。地図は国土地理院の地図を使っています。</div></section>
   <section id="tsu"><h2>津波情報<small id="t-t"></small></h2><div id="t-b">読み込み中…</div></section>
   <section id="wrn"><h2>気象警報・注意報<small id="w-t"></small></h2><div id="w-b">読み込み中…</div></section>
-  <section id="fc"><h2>天気予報<small id="f-t"></small></h2><div id="f-b">読み込み中…</div></section>
+  <section id="fc"><h2>函館の天気予報<small id="f-t"></small></h2><div id="f-b">読み込み中…</div></section>
   <section id="km"><h2>強震モニタ<small id="k-t"></small></h2>
     <img class="km" id="kimg" alt="強震モニタのリアルタイム震度画像">
     <div class="sub">防災科学技術研究所の画像を約10秒おきに更新します。<a href="https://www.kmoni.bosai.go.jp/" target="_blank" rel="noopener">公式サイト</a></div></section>
@@ -57,6 +66,7 @@ a{color:inherit}
   データ源: 気象庁防災情報XML(JSON)、P2P地震情報、防災科学技術研究所 強震モニタ。<br>
   確認・補助用の画面です。避難の判断は、J-ALERT、防災行政無線、気象庁の発表を優先してください。
 </footer>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 "use strict";
 // 函館市の設定。地域を変えるときはここを書き換える
@@ -64,8 +74,18 @@ const CFG = {
   city: "函館市",
   cityCode: "0120200",          // 気象庁の市町村コード
   office: "017000",             // 函館地方気象台(渡島・檜山地方)
-  forecastAreas: [["017010","渡島地方"],["017020","檜山地方"]],
+  forecastAreas: [["017010","函館(渡島地方)"]],
   tempStation: ["23232","函館"],
+  // 函館市内の震度観測点(気象庁の観測点名から「＊」「(旧)」を除いたもの)と位置
+  stations: [
+    ["函館市美原", 41.8167, 140.7533],
+    ["函館市大森町", 41.7678, 140.7341],
+    ["函館市日ノ浜町", 41.7807, 141.1030],
+    ["函館市泊町", 41.7161, 141.0019],
+    ["函館市新浜町", 41.8325, 141.1402],
+    ["函館市川汲町", 41.8909, 140.9508],
+    ["函館市尾札部町", 41.8900, 141.0283]
+  ],
   // 函館市の沿岸は津軽海峡側と噴火湾・太平洋側にまたがる
   tsunamiAreas: ["津軽海峡沿岸","北海道太平洋沿岸西部"],
   quakeRefreshMs: 15000, slowRefreshMs: 120000, kmoniMs: 10000
@@ -129,7 +149,7 @@ function banner(text, test){
 const DUMMY = () => {
   const now = jst(new Date()), t = `${now.getFullYear()}/${pad(now.getMonth()+1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
   return {id:"test-"+Date.now(), code:551, earthquake:{time:t, hypocenter:{name:"【試験】津軽海峡", magnitude:6.8, depth:10}, maxScale:50, domesticTsunami:"Watch"},
-    points:[{pref:"北海道",addr:"函館市東雲町",scale:50},{pref:"北海道",addr:"函館市泉沢",scale:45},{pref:"北海道",addr:"北斗市中央",scale:45},{pref:"青森県",addr:"大間町",scale:50}], issue:{time:t}};
+    points:[{pref:"北海道",addr:"函館市美原",scale:50},{pref:"北海道",addr:"函館市大森町",scale:45},{pref:"北海道",addr:"函館市日ノ浜町",scale:40},{pref:"北海道",addr:"函館市泊町",scale:30},{pref:"北海道",addr:"北斗市中央",scale:45},{pref:"青森県",addr:"大間町",scale:50}], issue:{time:t}};
 };
 const TSU = {None:"津波の心配なし",Unknown:"不明",Checking:"調査中",NonEffective:"若干の海面変動(被害の心配なし)",Watch:"津波注意報",Warning:"津波予報(種類不明)"};
 function renderQuake(q){
@@ -140,16 +160,19 @@ function renderQuake(q){
   $("q-b").innerHTML = `<div class="big">${scaleHtml(e.maxScale)} <span style="font-size:18px">${esc(h.name||"震源不明")}</span></div>
     <div class="sub">発生 ${fmtTime(e.time)} / ${mag} / 深さ ${dep}</div>
     <div>${esc(TSU[e.domesticTsunami]||e.domesticTsunami||"")}</div>`;
+  const norm = n => String(n).replace(/[＊*]/g,"").replace(/[（(]旧[）)]/,"");
   const mine = (q.points||[]).filter(p=>(p.addr||"").startsWith(CFG.city));
+  const val = {};
+  for(const p of mine) val[norm(p.addr)] = Math.max(val[norm(p.addr)]||0, p.scale);
   $("h-t").textContent = "";
-  if(mine.length){
-    const mx = Math.max(...mine.map(p=>p.scale));
-    $("h-b").innerHTML = `<div class="big">最大 ${scaleHtml(mx)}</div><table>`+
-      mine.sort((a,b)=>b.scale-a.scale).map(p=>`<tr><td>${esc(p.addr)}</td><td>${scaleHtml(p.scale)}</td></tr>`).join("")+"</table>";
-  }else{
-    $("h-b").innerHTML = `<div class="ok">この地震で${CFG.city}の観測点の震度発表はありません。</div>
-      <div class="sub">震度1以上を観測した観測点が${CFG.city}になかったか、震度速報の観測点に含まれていません。</div>`;
-  }
+  const known = new Set(CFG.stations.map(x=>x[0]));
+  const rows = CFG.stations.map(([n])=>[n, val[n]||0]).concat(Object.keys(val).filter(n=>!known.has(n)).map(n=>[n,val[n]]));
+  rows.sort((a,b)=>b[1]-a[1]);
+  const mx = rows.length ? rows[0][1] : 0;
+  $("h-b").innerHTML = (mx ? `<div class="big">最大 ${scaleHtml(mx)}</div>` : `<div class="ok">この地震で、${CFG.city}の観測点の震度発表はありません。</div>`)+
+    "<table>"+rows.map(([n,v])=>`<tr><td>${esc(n.replace(CFG.city,""))}</td><td>${v?scaleHtml(v):'<span class="sub">発表なし</span>'}</td></tr>`).join("")+"</table>"+
+    `<div class="sub">${esc(h.name||"")}の地震(${fmtTime(e.time)})</div>`;
+  drawMap(val);
   return mine.length ? Math.max(...mine.map(p=>p.scale)) : 0;
 }
 async function refreshQuake(){
@@ -173,6 +196,25 @@ async function refreshQuake(){
       }
     }
   }catch(e){ setStatus("quake", false, e.message); $("q-b").innerHTML = `<div class="err">取得できません(${esc(e.message)})</div>`; }
+}
+
+// ---- 地図 ----
+let map = null, pins = {};
+function drawMap(val){
+  if(!window.L){ $("map").innerHTML = '<div class="err" style="padding:12px">地図ライブラリを読み込めません。右の表で震度を確認してください。</div>'; return; }
+  if(!map){
+    map = L.map("map", {scrollWheelZoom:false}).setView([41.80, 140.95], 10);
+    L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", {maxZoom:17, attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a>'}).addTo(map);
+    const pts = CFG.stations.map(x=>[x[1],x[2]]);
+    map.fitBounds(pts, {padding:[40,40]});
+  }
+  for(const [n, lat, lon] of CFG.stations){
+    const v = val[n]||0, cls = v ? scaleCls(v) : "";
+    const icon = L.divIcon({className:"", iconSize:[34,34], html:`<div class="pin ${cls}" style="width:34px;height:34px">${v?(SCALE[v]||"?"):"–"}</div>`});
+    const tip = n.replace(CFG.city,"")+" "+(v?"震度"+SCALE[v]:"発表なし");
+    if(pins[n]){ pins[n].setIcon(icon); pins[n].setTooltipContent(tip); }
+    else pins[n] = L.marker([lat,lon], {icon, title:n}).bindTooltip(tip, {direction:"top"}).addTo(map);
+  }
 }
 
 // ---- 津波 ----
