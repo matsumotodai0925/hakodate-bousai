@@ -10,23 +10,23 @@
 @media (prefers-color-scheme:dark){:root{--bg:#10161c;--card:#1a232c;--fg:#e6edf3;--sub:#93a4b3;--line:#2c3945;--ok:#66bb6a;--warn:#ffb74d;--bad:#ef5350;--test:#ce93d8}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,"Hiragino Sans","Noto Sans JP",sans-serif}
-header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:6px 16px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
 h1{font-size:18px;margin:0}
 header .sp{flex:1}
 button{font:inherit;padding:4px 12px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);cursor:pointer}
 button.on{background:var(--fg);color:var(--bg)}
 #banner{display:none;padding:10px 16px;font-weight:700;color:#fff;background:var(--bad)}
 #banner.test{background:var(--test)}
-main{display:grid;gap:12px;padding:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
+main{display:grid;gap:10px;padding:10px;grid-template-columns:repeat(3,minmax(0,1fr))}
 @media (max-width:1000px){main{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:560px){main{grid-template-columns:minmax(0,1fr)}}
-section{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
-section h2{font-size:15px;margin:0 0 8px;display:flex;justify-content:space-between;gap:8px}
+section{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+section h2{font-size:15px;margin:0 0 6px;display:flex;justify-content:space-between;gap:8px}
 section h2 small{font-weight:400;color:var(--sub)}
-.big{font-size:30px;font-weight:700;line-height:1.2}
+.big{font-size:26px;font-weight:700;line-height:1.2}
 .sub{color:var(--sub);font-size:13px}
 table{width:100%;border-collapse:collapse;font-size:14px}
-td,th{padding:3px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+td,th{padding:2px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 .s{display:inline-block;min-width:2.4em;text-align:center;border-radius:4px;color:#fff;font-weight:700;padding:0 4px;background:#78909c}
 .s5{background:#e65100}.s6{background:#b71c1c}.s4{background:#f9a825;color:#000}.s3{background:#2e7d32}.s2{background:#1976d2}
 .ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
@@ -34,10 +34,15 @@ td,th{padding:3px 6px;border-bottom:1px solid var(--line);text-align:left;vertic
 footer{padding:8px 16px 24px;color:var(--sub);font-size:12px}
 a{color:inherit}
 section.wide{grid-column:1/-1}
-.cols{display:grid;gap:12px;grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr);align-items:start}
+.cols{display:grid;gap:12px;grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr);align-items:stretch}
+.cols>div:first-child{display:flex;flex-direction:column}
 @media (max-width:760px){.cols{grid-template-columns:minmax(0,1fr)}}
 h3{font-size:14px;margin:14px 0 6px;display:flex;justify-content:space-between;gap:8px}
 h3 small{font-weight:400;color:var(--sub)}
+.note{margin-top:6px}
+.st{font-size:12px;color:var(--sub);margin-top:6px}
+.st .ok,.st .err{font-weight:700}
+.radarbar .st{margin:0;flex-basis:100%}
 .radarbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px;font-size:13px}
 .radarbar input[type=range]{flex:1;min-width:120px}
 #rtime{min-width:7em}
@@ -49,7 +54,7 @@ body.eq main>#quake{order:-3;grid-column:1/-1;border:3px solid var(--bad)}
 body.eq main>#quake .big{font-size:44px}
 body.eq main>#hako{order:-1;grid-column:1/-1}
 body.eq #fc,body.eq .radarbar{display:none}
-#map{height:300px;border-radius:6px;border:1px solid var(--line);background:var(--bg)}
+#map{flex:1;min-height:300px;border-radius:6px;border:1px solid var(--line);background:var(--bg)}
 .pin{display:flex;align-items:center;justify-content:center;border-radius:50%;border:2px solid #fff;color:#fff;font-weight:700;font-size:13px;box-shadow:0 0 3px rgba(0,0,0,.6);background:#78909c}
 .pin.s2{background:#1976d2}.pin.s3{background:#2e7d32}.pin.s4{background:#f9a825;color:#000}.pin.s5{background:#e65100}.pin.s6{background:#b71c1c}
 .leaflet-container{font:inherit}
@@ -58,7 +63,7 @@ body.eq #fc,body.eq .radarbar{display:none}
 <body>
 <header>
   <h1>函館市防災ダッシュボード</h1>
-  <span class="sub" id="clock"></span>
+  <span class="sub" id="clock"></span><span class="bad" id="offline" hidden>ブラウザがオフラインです</span>
   <span class="sp"></span>
   <button id="snd">通知音: オフ</button>
   <button id="tst">試験モード</button>
@@ -69,15 +74,14 @@ body.eq #fc,body.eq .radarbar{display:none}
     <div class="cols">
       <div><div id="map"></div>
         <div class="radarbar"><label><input type="checkbox" id="rchk" checked> 雨雲レーダー</label>
-          <button id="rplay" type="button">再生</button><input type="range" id="rrange" min="0" max="0" value="0"><span id="rtime"></span></div>
-        <div class="sub" style="margin-top:6px">雨雲は気象庁の高解像度降水ナウキャスト(青から赤になるほど強い雨)です。観測点の位置は、気象庁の観測点一覧(美原、尾札部町)と、町名の代表点(＊の自治体設置の点)です。町名の代表点は実際の設置場所とずれます。地図は国土地理院の地図です。</div></div>
+          <button id="rplay" type="button">再生</button><input type="range" id="rrange" min="0" max="0" value="0"><span id="rtime"></span><span class="st" id="st-radar"></span></div></div>
       <div><div id="h-b">読み込み中…</div>
-        <div id="fc"><h3>市内各地の現在の天気<small id="f-t"></small></h3><div id="f-b">読み込み中…</div></div></div>
-    </div></section>
-  <section id="quake"><h2>最新の地震情報<small id="q-t"></small></h2><div id="q-b">読み込み中…</div></section>
-  <section id="tsu"><h2>津波情報<small id="t-t"></small></h2><div id="t-b">読み込み中…</div></section>
-  <section id="wrn"><h2>気象警報・注意報<small id="w-t"></small></h2><div id="w-b">読み込み中…</div></section>
-  <section id="net"><h2>通信状態</h2><div id="n-b"></div></section>
+        <div id="fc"><h3>市内各地の現在の天気<small id="f-t"></small></h3><div id="f-b">読み込み中…</div><div class="st" id="st-fc"></div></div></div>
+    </div>
+    <div class="sub note">雨雲は気象庁の高解像度降水ナウキャスト(青から赤になるほど強い雨)。観測点の位置は気象庁の一覧(美原、尾札部町)と町名の代表点で、実際の設置場所とずれます。地図は国土地理院。</div></section>
+  <section id="quake"><h2>最新の地震情報<small id="q-t"></small></h2><div id="q-b">読み込み中…</div><div class="st" id="st-quake"></div></section>
+  <section id="tsu"><h2>津波情報<small id="t-t"></small></h2><div id="t-b">読み込み中…</div><div class="st" id="st-tsunami"></div></section>
+  <section id="wrn"><h2>気象警報・注意報<small id="w-t"></small></h2><div id="w-b">読み込み中…</div><div class="st" id="st-warn"></div></section>
 </main>
 <footer>
   データ源: 気象庁防災情報XML(JSON)、P2P地震情報。<br>
@@ -135,12 +139,13 @@ async function getJson(url){
 }
 function setStatus(k, ok, msg){ status[k] = {ok, msg, at:new Date()}; renderNet(); }
 function renderNet(){
-  const names = {quake:"P2P地震情報",tsunami:"気象庁 津波",warn:"気象庁 警報",fc:"気象庁 アメダス",radar:"気象庁 雨雲レーダー"};
-  $("n-b").innerHTML = "<table>"+Object.keys(names).map(k=>{
-    const s = status[k];
-    const cell = !s ? "未取得" : s.ok ? `<span class="ok">正常</span> <span class="sub">${pad(s.at.getHours())}:${pad(s.at.getMinutes())}:${pad(s.at.getSeconds())}</span>` : `<span class="err">失敗 ${esc(s.msg)}</span>`;
-    return `<tr><td>${names[k]}</td><td>${cell}</td></tr>`;
-  }).join("")+"</table>"+`<div class="sub">${navigator.onLine?"ブラウザはオンラインです":"ブラウザがオフラインです"}</div>`;
+  const ids = {quake:"st-quake",tsunami:"st-tsunami",warn:"st-warn",fc:"st-fc",radar:"st-radar"};
+  for(const k in ids){
+    const el = $(ids[k]); if(!el) continue;
+    const st = status[k];
+    el.innerHTML = !st ? "通信: 未取得" : st.ok ? `通信: <span class="ok">正常</span> ${pad(st.at.getHours())}:${pad(st.at.getMinutes())}:${pad(st.at.getSeconds())}` : `通信: <span class="err">失敗</span> ${esc(st.msg)}`;
+  }
+  $("offline").hidden = navigator.onLine;
 }
 
 function beep(){
