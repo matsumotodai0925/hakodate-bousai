@@ -39,7 +39,6 @@ section.wide{grid-column:1/-1}
 @media (max-width:760px){.cols{grid-template-columns:minmax(0,1fr)}}
 h3{font-size:14px;margin:14px 0 6px;display:flex;justify-content:space-between;gap:8px}
 h3 small{font-weight:400;color:var(--sub)}
-.note{margin-top:6px}
 .st{font-size:12px;color:var(--sub);margin-top:6px}
 .st .ok,.st .err{font-weight:700}
 .radarbar .st{margin:0;flex-basis:100%}
@@ -77,8 +76,7 @@ body.eq #fc,body.eq .radarbar{display:none}
           <button id="rplay" type="button">再生</button><input type="range" id="rrange" min="0" max="0" value="0"><span id="rtime"></span><span class="st" id="st-radar"></span></div></div>
       <div><div id="h-b">読み込み中…</div>
         <div id="fc"><h3>市内各地の現在の天気<small id="f-t"></small></h3><div id="f-b">読み込み中…</div><div class="st" id="st-fc"></div></div></div>
-    </div>
-    <div class="sub note">雨雲は気象庁の高解像度降水ナウキャスト(青から赤になるほど強い雨)。観測点の位置は気象庁の一覧(美原、尾札部町)と町名の代表点で、実際の設置場所とずれます。地図は国土地理院。</div></section>
+    </div></section>
   <section id="quake"><h2>最新の地震情報<small id="q-t"></small></h2><div id="q-b">読み込み中…</div><div class="st" id="st-quake"></div></section>
   <section id="tsu"><h2>津波情報<small id="t-t"></small></h2><div id="t-b">読み込み中…</div><div class="st" id="st-tsunami"></div></section>
   <section id="wrn"><h2>気象警報・注意報<small id="w-t"></small></h2><div id="w-b">読み込み中…</div><div class="st" id="st-warn"></div></section>
@@ -95,6 +93,7 @@ const CFG = {
   city: "函館市",
   cityCode: "0120200",          // 気象庁の市町村コード
   office: "017000",             // 函館地方気象台(渡島・檜山地方)
+  mapView: {center: [41.807, 140.916], zoom: 11}, // 地図の初期位置と縮尺
   // 函館市内のアメダス(気象庁)
   amedas: [["23232","函館"],["23206","川汲"],["23291","戸井泊"]],
   // 函館市内の震度観測点(気象庁の観測点名から「＊」「(旧)」を除いたもの)と位置
@@ -252,10 +251,11 @@ let map = null, pins = {};
 function drawMap(val){
   if(!window.L){ $("map").innerHTML = '<div class="err" style="padding:12px">地図ライブラリを読み込めません。右の表で震度を確認してください。</div>'; return; }
   if(!map){
-    map = L.map("map", {scrollWheelZoom:false}).setView([41.80, 140.95], 10);
+    map = L.map("map", {scrollWheelZoom:false}).setView(CFG.mapView.center, CFG.mapView.zoom);
+    // 地図の高さは右の列に合わせて伸びるため、伸びたあとに初期位置を取り直し、以後の大きさの変化にも追従する
+    requestAnimationFrame(()=>{ map.invalidateSize(); map.setView(CFG.mapView.center, CFG.mapView.zoom, {animate:false}); });
+    if(window.ResizeObserver) new ResizeObserver(()=>map.invalidateSize({animate:false})).observe($("map"));
     L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", {maxZoom:17, attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a>'}).addTo(map);
-    const pts = CFG.stations.map(x=>[x[1],x[2]]);
-    map.fitBounds(pts, {padding:[40,40]});
   }
   for(const [n, lat, lon] of CFG.stations){
     const v = val[n]||0, cls = v ? scaleCls(v) : "";
