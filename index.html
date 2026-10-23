@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>函館市防災ダッシュボード</title>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--fg:#1c2733;--sub:#5b6b7a;--line:#d5dce3;--ok:#2e7d32;--warn:#e69500;--bad:#c62828;--test:#6a1b9a}
+@media (prefers-color-scheme:dark){:root{--bg:#10161c;--card:#1a232c;--fg:#e6edf3;--sub:#93a4b3;--line:#2c3945;--ok:#66bb6a;--warn:#ffb74d;--bad:#ef5350;--test:#ce93d8}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,"Hiragino Sans","Noto Sans JP",sans-serif}
+header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+h1{font-size:18px;margin:0}
+header .sp{flex:1}
+button{font:inherit;padding:4px 12px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);cursor:pointer}
+button.on{background:var(--fg);color:var(--bg)}
+#banner{display:none;padding:10px 16px;font-weight:700;color:#fff;background:var(--bad)}
+#banner.test{background:var(--test)}
+main{display:grid;gap:12px;padding:12px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+section{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+section h2{font-size:15px;margin:0 0 8px;display:flex;justify-content:space-between;gap:8px}
+section h2 small{font-weight:400;color:var(--sub)}
+.big{font-size:30px;font-weight:700;line-height:1.2}
+.sub{color:var(--sub);font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{padding:3px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.s{display:inline-block;min-width:2.4em;text-align:center;border-radius:4px;color:#fff;font-weight:700;padding:0 4px;background:#78909c}
+.s5{background:#e65100}.s6{background:#b71c1c}.s4{background:#f9a825;color:#000}.s3{background:#2e7d32}.s2{background:#1976d2}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+img.km{width:100%;max-width:352px;display:block;margin:auto;image-rendering:pixelated;background:#000}
+.err{color:var(--bad);font-size:13px}
+footer{padding:8px 16px 24px;color:var(--sub);font-size:12px}
+a{color:inherit}
+</style>
+</head>
+<body>
+<header>
+  <h1>函館市防災ダッシュボード</h1>
+  <span class="sub" id="clock"></span>
+  <span class="sp"></span>
+  <button id="snd">通知音: オフ</button>
+  <button id="tst">試験モード</button>
+</header>
+<div id="banner"></div>
+<main>
+  <section id="quake"><h2>最新の地震情報<small id="q-t"></small></h2><div id="q-b">読み込み中…</div></section>
+  <section id="hako"><h2>函館市の震度<small id="h-t"></small></h2><div id="h-b">読み込み中…</div></section>
+  <section id="tsu"><h2>津波情報<small id="t-t"></small></h2><div id="t-b">読み込み中…</div></section>
+  <section id="wrn"><h2>気象警報・注意報<small id="w-t"></small></h2><div id="w-b">読み込み中…</div></section>
+  <section id="fc"><h2>天気予報<small id="f-t"></small></h2><div id="f-b">読み込み中…</div></section>
+  <section id="km"><h2>強震モニタ<small id="k-t"></small></h2>
+    <img class="km" id="kimg" alt="強震モニタのリアルタイム震度画像">
+    <div class="sub">防災科学技術研究所の画像を約10秒おきに更新します。<a href="https://www.kmoni.bosai.go.jp/" target="_blank" rel="noopener">公式サイト</a></div></section>
+  <section id="net"><h2>通信状態</h2><div id="n-b"></div></section>
+</main>
+<footer>
+  データ源: 気象庁防災情報XML(JSON)、P2P地震情報、防災科学技術研究所 強震モニタ。<br>
+  確認・補助用の画面です。避難の判断は、J-ALERT、防災行政無線、気象庁の発表を優先してください。
+</footer>
+<script>
+"use strict";
+// 函館市の設定。地域を変えるときはここを書き換える
+const CFG = {
+  city: "函館市",
+  cityCode: "0120200",          // 気象庁の市町村コード
+  office: "017000",             // 函館地方気象台(渡島・檜山地方)
+  forecastAreas: [["017010","渡島地方"],["017020","檜山地方"]],
+  tempStation: ["23232","函館"],
+  // 函館市の沿岸は津軽海峡側と噴火湾・太平洋側にまたがる
+  tsunamiAreas: ["津軽海峡沿岸","北海道太平洋沿岸西部"],
+  quakeRefreshMs: 15000, slowRefreshMs: 120000, kmoniMs: 10000
+};
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const SCALE = {10:"1",20:"2",30:"3",40:"4",45:"5弱",46:"5強",50:"6弱",55:"6強",60:"7"};
+const scaleCls = v => v>=50?"s6":v>=45?"s5":v>=40?"s4":v>=30?"s3":v>=20?"s2":"";
+const scaleHtml = v => v>0 ? `<span class="s ${scaleCls(v)}">${SCALE[v]||"?"}</span>` : `<span class="s">不明</span>`;
+const WARN = {"02":"暴風雪警報","03":"大雨警報","04":"洪水警報","05":"暴風警報","06":"大雪警報","07":"波浪警報","08":"高潮警報",
+  "10":"大雨注意報","12":"大雪注意報","13":"風雪注意報","14":"雷注意報","15":"強風注意報","16":"波浪注意報","17":"融雪注意報","18":"洪水注意報","19":"高潮注意報",
+  "20":"濃霧注意報","21":"乾燥注意報","22":"なだれ注意報","23":"低温注意報","24":"霜注意報","25":"着氷注意報","26":"着雪注意報",
+  "32":"暴風雪特別警報","33":"大雨特別警報","35":"暴風特別警報","36":"大雪特別警報","37":"波浪特別警報","38":"高潮特別警報"};
+const SEVERE = c => +c>=2 && +c<=8 || +c>=32;
+const WX = {"1":"晴れ","2":"くもり","3":"雨","4":"雪"};
+const wxIcon = c => `https://www.jma.go.jp/bosai/forecast/img/${c}.svg`;
+const pad = n => String(n).padStart(2,"0");
+const jst = d => new Date(d.getTime() + (d.getTimezoneOffset()+540)*60000);
+const fmtTime = s => s ? String(s).replace(/^\d{4}\//,"").replace(/:\d\d(\.\d+)?$/,"") : "";
+// 気象庁の ISO 8601 形式(2026-10-23T11:00:00+09:00)を「10/23 11:00」にする
+const fmtIso = s => { const m = /^\d{4}-(\d\d)-(\d\d)T(\d\d):(\d\d)/.exec(s||""); return m ? `${m[1]}/${m[2]} ${m[3]}:${m[4]}` : ""; };
+
+let testMode = false, sound = false, lastQuakeId = null, lastAlertKey = null, audioCtx = null;
+const status = {};
+
+async function getJson(url){
+  const r = await fetch(url, {cache:"no-store"});
+  if(!r.ok) throw new Error(r.status);
+  return r.json();
+}
+function setStatus(k, ok, msg){ status[k] = {ok, msg, at:new Date()}; renderNet(); }
+function renderNet(){
+  const names = {quake:"P2P地震情報",tsunami:"気象庁 津波",warn:"気象庁 警報",fc:"気象庁 予報",km:"強震モニタ"};
+  $("n-b").innerHTML = "<table>"+Object.keys(names).map(k=>{
+    const s = status[k];
+    const cell = !s ? "未取得" : s.ok ? `<span class="ok">正常</span> <span class="sub">${pad(s.at.getHours())}:${pad(s.at.getMinutes())}:${pad(s.at.getSeconds())}</span>` : `<span class="err">失敗 ${esc(s.msg)}</span>`;
+    return `<tr><td>${names[k]}</td><td>${cell}</td></tr>`;
+  }).join("")+"</table>"+`<div class="sub">${navigator.onLine?"ブラウザはオンラインです":"ブラウザがオフラインです"}</div>`;
+}
+
+function beep(){
+  if(!sound) return;
+  try{
+    audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    [0,0.35,0.7].forEach(t=>{
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.frequency.value = 880; o.connect(g); g.connect(audioCtx.destination);
+      g.gain.setValueAtTime(0.2, audioCtx.currentTime+t);
+      g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime+t+0.25);
+      o.start(audioCtx.currentTime+t); o.stop(audioCtx.currentTime+t+0.3);
+    });
+  }catch(e){}
+}
+function banner(text, test){
+  const b = $("banner");
+  if(!text){ b.style.display="none"; return; }
+  b.textContent = text; b.className = test?"test":""; b.style.display="block";
+}
+
+// ---- 地震 ----
+const DUMMY = () => {
+  const now = jst(new Date()), t = `${now.getFullYear()}/${pad(now.getMonth()+1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  return {id:"test-"+Date.now(), code:551, earthquake:{time:t, hypocenter:{name:"【試験】津軽海峡", magnitude:6.8, depth:10}, maxScale:50, domesticTsunami:"Watch"},
+    points:[{pref:"北海道",addr:"函館市東雲町",scale:50},{pref:"北海道",addr:"函館市泉沢",scale:45},{pref:"北海道",addr:"北斗市中央",scale:45},{pref:"青森県",addr:"大間町",scale:50}], issue:{time:t}};
+};
+const TSU = {None:"津波の心配なし",Unknown:"不明",Checking:"調査中",NonEffective:"若干の海面変動(被害の心配なし)",Watch:"津波注意報",Warning:"津波予報(種類不明)"};
+function renderQuake(q){
+  const e = q.earthquake, h = e.hypocenter||{};
+  const mag = h.magnitude>0 ? "M"+h.magnitude : "M不明";
+  const dep = h.depth>=0 && h.depth!=null ? (h.depth===0?"ごく浅い":h.depth+"km") : "不明";
+  $("q-t").textContent = fmtTime(q.issue&&q.issue.time||q.time);
+  $("q-b").innerHTML = `<div class="big">${scaleHtml(e.maxScale)} <span style="font-size:18px">${esc(h.name||"震源不明")}</span></div>
+    <div class="sub">発生 ${fmtTime(e.time)} / ${mag} / 深さ ${dep}</div>
+    <div>${esc(TSU[e.domesticTsunami]||e.domesticTsunami||"")}</div>`;
+  const mine = (q.points||[]).filter(p=>(p.addr||"").startsWith(CFG.city));
+  $("h-t").textContent = "";
+  if(mine.length){
+    const mx = Math.max(...mine.map(p=>p.scale));
+    $("h-b").innerHTML = `<div class="big">最大 ${scaleHtml(mx)}</div><table>`+
+      mine.sort((a,b)=>b.scale-a.scale).map(p=>`<tr><td>${esc(p.addr)}</td><td>${scaleHtml(p.scale)}</td></tr>`).join("")+"</table>";
+  }else{
+    $("h-b").innerHTML = `<div class="ok">この地震で${CFG.city}の観測点の震度発表はありません。</div>
+      <div class="sub">震度1以上を観測した観測点が${CFG.city}になかったか、震度速報の観測点に含まれていません。</div>`;
+  }
+  return mine.length ? Math.max(...mine.map(p=>p.scale)) : 0;
+}
+async function refreshQuake(){
+  try{
+    let q;
+    if(testMode) q = DUMMY();
+    else{
+      const a = await getJson("https://api.p2pquake.net/v2/history?codes=551&limit=1");
+      if(!a.length) throw new Error("データなし");
+      q = a[0];
+    }
+    const myMax = renderQuake(q);
+    setStatus("quake", true);
+    if(q.id !== lastQuakeId){
+      const first = lastQuakeId === null;
+      lastQuakeId = q.id;
+      if(!first || testMode){
+        beep();
+        if(myMax >= 20 || q.earthquake.maxScale >= 40)
+          banner(`${testMode?"【試験】":""}地震情報: ${CFG.city}${myMax?"で震度"+SCALE[myMax]:"の震度発表なし"} / 最大震度${SCALE[q.earthquake.maxScale]||"?"} ${q.earthquake.hypocenter.name||""}`, testMode);
+      }
+    }
+  }catch(e){ setStatus("quake", false, e.message); $("q-b").innerHTML = `<div class="err">取得できません(${esc(e.message)})</div>`; }
+}
+
+// ---- 津波 ----
+const TSUKIND = {"津波予報（若干の海面変動）":"若干の海面変動"};
+async function refreshTsunami(){
+  try{
+    const list = await getJson("https://www.jma.go.jp/bosai/tsunami/data/list.json");
+    const mine = [];
+    let latest = list.length ? list[0] : null;
+    if(testMode){
+      $("t-b").innerHTML = `<div class="bad"><b>【試験】津波注意報</b></div><table><tr><td>津軽海峡沿岸</td><td>津波注意報</td><td>1m</td></tr><tr><td>北海道太平洋沿岸西部</td><td>津波注意報</td><td>1m</td></tr></table>`;
+      setStatus("tsunami", true); return;
+    }
+    if(!latest){ $("t-b").innerHTML = `<div class="ok">現在、津波に関する発表はありません。</div>`; setStatus("tsunami", true); return; }
+    const d = await getJson("https://www.jma.go.jp/bosai/tsunami/data/"+latest.json);
+    const items = (d.Body&&d.Body.Tsunami&&d.Body.Tsunami.Forecast&&d.Body.Tsunami.Forecast.Item)||[];
+    for(const it of items) if(CFG.tsunamiAreas.includes(it.Area.Name)) mine.push(it);
+    const cancelled = d.Head.InfoType==="取消" || (d.Body.Tsunami&&d.Body.Tsunami.Forecast==null);
+    const valid = d.Head.ValidDateTime ? new Date(d.Head.ValidDateTime) > new Date() : true;
+    const head = `<div class="sub">${esc(d.Head.Title)} ${fmtIso(d.Head.ReportDateTime)}発表</div>`;
+    if(cancelled || !valid) $("t-b").innerHTML = `<div class="ok">現在、${CFG.city}に関係する津波の発表はありません。</div>`+head;
+    else if(!mine.length) $("t-b").innerHTML = `<div class="ok">${CFG.tsunamiAreas.join("・")}は発表の対象外です。</div>`+head;
+    else{
+      const worst = mine.some(i=>/警報/.test(i.Category.Kind.Name)) ;
+      $("t-b").innerHTML = `<div class="${worst?"bad":"warn"}"><b>${esc(mine.map(i=>i.Category.Kind.Name).join(" / "))}</b></div><table>`+
+        mine.map(i=>`<tr><td>${esc(i.Area.Name)}</td><td>${esc(TSUKIND[i.Category.Kind.Name]||i.Category.Kind.Name)}</td><td>${esc((i.MaxHeight&&i.MaxHeight.TsunamiHeight)||"")}</td></tr>`).join("")+"</table>"+head;
+      const key = "t"+latest.json;
+      if(key!==lastAlertKey){ if(lastAlertKey!==null) beep(); lastAlertKey = key; }
+    }
+    setStatus("tsunami", true);
+  }catch(e){ setStatus("tsunami", false, e.message); $("t-b").innerHTML = `<div class="err">取得できません(${esc(e.message)})</div>`; }
+}
+
+// ---- 警報 ----
+async function refreshWarn(){
+  try{
+    const d = await getJson(`https://www.jma.go.jp/bosai/warning/data/warning/${CFG.office}.json`);
+    let list = [];
+    for(const t of d.areaTypes) for(const a of t.areas) if(a.code===CFG.cityCode)
+      list = (a.warnings||[]).filter(w=>w.status!=="発表警報・注意報はなし" && w.code);
+    if(testMode) list = [{code:"03",status:"発表"},{code:"15",status:"継続"}];
+    $("w-t").textContent = fmtIso(d.reportDatetime)+"発表";
+    $("w-b").innerHTML = list.length ? list.map(w=>`<div class="${SEVERE(w.code)?"bad":"warn"}"><b>${esc(WARN[w.code]||"コード"+w.code)}</b> <span class="sub">${esc(w.status||"")}</span></div>`).join("")
+      : `<div class="ok">${CFG.city}に発表中の警報・注意報はありません。</div>`;
+    $("w-b").innerHTML += d.headlineText ? `<div class="sub" style="margin-top:6px">${esc(d.headlineText)}</div>` : "";
+    setStatus("warn", true);
+  }catch(e){ setStatus("warn", false, e.message); $("w-b").innerHTML = `<div class="err">取得できません(${esc(e.message)})</div>`; }
+}
+
+// ---- 天気 ----
+async function refreshForecast(){
+  try{
+    const d = await getJson(`https://www.jma.go.jp/bosai/forecast/data/forecast/${CFG.office}.json`);
+    const ts = d[0].timeSeries, days = ts[0].timeDefines.map(t=>jst(new Date(t)));
+    const pops = ts[1];
+    const temps = ts[2].areas.find(a=>a.area.code===CFG.tempStation[0]);
+    const cols = CFG.forecastAreas.map(([code,name])=>{
+      const w = ts[0].areas.find(a=>a.area.code===code);
+      const p = pops.areas.find(a=>a.area.code===code);
+      return `<div style="flex:1;min-width:140px"><b>${name}</b>`+days.map((dt,i)=>
+        `<div style="display:flex;gap:8px;align-items:center;border-top:1px solid var(--line);padding:4px 0">
+          <img src="${wxIcon(w.weatherCodes[i])}" width="40" alt="" onerror="this.style.visibility='hidden'">
+          <div><div class="sub">${dt.getMonth()+1}/${dt.getDate()}</div><div>${esc((w.weathers[i]||"").replace(/　/g," "))}</div></div></div>`).join("")+"</div>";
+    });
+    const tmin = temps && temps.temps ? temps.temps.filter(Boolean).join("℃ / ")+"℃" : "";
+    $("f-b").innerHTML = `<div style="display:flex;gap:12px;flex-wrap:wrap">${cols.join("")}</div><div class="sub" style="margin-top:6px">${CFG.tempStation[1]}の気温: ${tmin}</div>`;
+    $("f-t").textContent = fmtIso(d[0].reportDatetime)+"発表";
+    setStatus("fc", true);
+  }catch(e){ setStatus("fc", false, e.message); $("f-b").innerHTML = `<div class="err">取得できません(${esc(e.message)})</div>`; }
+}
+
+// ---- 強震モニタ ----
+function refreshKmoni(){
+  const t = jst(new Date(Date.now()-5000)); // 配信遅れ分を差し引く
+  const d = `${t.getFullYear()}${pad(t.getMonth()+1)}${pad(t.getDate())}`, s = d+pad(t.getHours())+pad(t.getMinutes())+pad(t.getSeconds());
+  const img = new Image();
+  img.onload = ()=>{ $("kimg").src = img.src; $("k-t").textContent = `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`; setStatus("km", true); };
+  img.onerror = ()=> setStatus("km", false, "画像を取得できません");
+  img.src = `https://www.kmoni.bosai.go.jp/data/map_img/RealTimeImg/jma_s/${d}/${s}.jma_s.gif`;
+}
+
+// ---- UI ----
+setInterval(()=>{ const n=jst(new Date()); $("clock").textContent = `${n.getFullYear()}/${pad(n.getMonth()+1)}/${pad(n.getDate())} ${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`; },1000);
+$("snd").onclick = ()=>{ sound=!sound; $("snd").textContent="通知音: "+(sound?"オン":"オフ"); $("snd").classList.toggle("on",sound); if(sound) beep(); };
+$("tst").onclick = ()=>{
+  testMode = !testMode; $("tst").classList.toggle("on",testMode);
+  if(!testMode){ banner(""); lastQuakeId=null; }
+  else banner("試験モード: 表示は架空の情報です。実際の発表ではありません。", true);
+  refreshAll();
+};
+function refreshAll(){ refreshQuake(); refreshTsunami(); refreshWarn(); refreshForecast(); refreshKmoni(); }
+refreshAll(); renderNet();
+setInterval(refreshQuake, CFG.quakeRefreshMs);
+setInterval(refreshTsunami, CFG.quakeRefreshMs*2);
+setInterval(refreshWarn, CFG.slowRefreshMs);
+setInterval(refreshForecast, CFG.slowRefreshMs*5);
+setInterval(refreshKmoni, CFG.kmoniMs);
+window.addEventListener("online", renderNet); window.addEventListener("offline", renderNet);
+</script>
+</body>
+</html>
